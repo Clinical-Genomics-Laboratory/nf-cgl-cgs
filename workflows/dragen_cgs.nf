@@ -5,6 +5,7 @@
 */
 
 include { DEMULTIPLEX                          } from '../subworkflows/local/demultiplex'
+include { GET_SAMPLE_METADATA                  } from '../modules/local/get_sample_metadata'
 include { DRAGEN_ALIGN                         } from '../modules/local/dragen_align'
 include { DRAGEN_ALIGN as DRAGEN_ALIGN_CONTROL } from '../modules/local/dragen_align'
 include { JOINT_GENOTYPING                     } from '../subworkflows/local/joint_genotyping'
@@ -23,18 +24,19 @@ if (params.input) {
 } else {
     ch_input_file = Channel.empty()
 }
-// Sample information
-if (params.sample_info) {
-    ch_sample_information = Channel.fromPath(params.sample_info, checkIfExists: true).collect()
-} else {
-    ch_sample_information = Channel.empty()
-}
 
 // DRAGEN reference directory
 if (params.refdir) {
     ch_reference_dir = Channel.fromPath(params.refdir, type: 'dir', checkIfExists: true).collect()
 } else {
     ch_reference_dir = []
+}
+
+// CRAM reference file
+if (params.cram_reference) {
+    ch_cram_reference_file = Channel.fromPath("${params.cram_reference}*", checkIfExists: true).collect()
+} else {
+    ch_cram_reference_file = []
 }
 
 // DRAGEN dbSNP annotation VCF
@@ -93,7 +95,7 @@ workflow DRAGEN_CGS {
 
     take:
     ch_samplesheet  // channel: [ path(file) ]
-    ch_samples      // channel: [ val(meta), path(file) ]
+    ch_samples      // channel: [ val(meta), path(reads), path(fastq_list), path(alignment_file) ]
 
     main:
     ch_versions       = Channel.empty()
@@ -121,48 +123,55 @@ workflow DRAGEN_CGS {
         ch_samples  = ch_samples.mix(DEMULTIPLEX.out.samples)
     }
 
-    // Fetch gender for samples
-    if (params.sample_info) {
-        ch_samples = ch_samples
-                        .map{ meta, reads, fastq_list -> [ meta?.acc ?: meta?.id, meta, reads, fastq_list ] }
-                        .join(
-                            ch_sample_information
-                                .splitCsv(header: true)
-                                .map{ [ it['Accession'].join(''), it['gender'].join('').toLowerCase() ] },
-                            remainder: true
-                        )
-                        .filter{ it[1] != null }
-                        .map{
-                            acc, meta, reads, fastq_list, gender ->
-                                if (meta) {
-                                    def meta_new = meta.clone()
-                                    meta_new['sex']   = (gender == 'm' || gender == 'male')   ? 'male'   :
-                                                        (gender == 'f' || gender == 'female') ? 'female' : ''
+    //
+    // MODULE: Fetch sample metadata
+    //
+    GET_SAMPLE_METADATA (
+        ch_samples
+            .map{ meta, reads, fastq_list, alignment_file -> meta.acc ?: meta.id }
+            .collect()
+            .filter{ it.size() > 0 }
+    )
+    ch_versions = ch_versions.mix(GET_SAMPLE_METADATA.out.versions)
 
-                                    [ meta_new, reads, fastq_list ]
-                                }
-                        }
-    }
+    // Join sample metadata to existing channel by sample ID (SpcNum) and filter out samples with missing metadata
+    ch_samples = ch_samples
+                    .map{ meta, reads, fastq_list, alignment_file -> [ meta?.acc ?: meta?.id, meta, reads, fastq_list, alignment_file ] }
+                    .join(
+                        GET_SAMPLE_METADATA.out.metadata
+                            .splitCsv(header: true)
+                            .map{ [ it.SpcNum, it.Sex?.toLowerCase() ] },
+                        remainder: true
+                    )
+                    .filter{ acc, meta, reads, fastq_list, alignment_file, gender -> (meta != null) && (acc != null) }
+                    .map{
+                        acc, meta, reads, fastq_list, alignment_file, gender ->
+                            def meta_new = meta.clone()
+                            meta_new['sex']   = (gender == 'm' || gender == 'male')   ? 'male'   :
+                                                (gender == 'f' || gender == 'female') ? 'female' : ''
+
+                            [ meta_new, reads, fastq_list, alignment_file ]
+                    }
 
     // Automatically determine if GVCF should be created
     ch_samples = ch_samples
                     .combine(ch_samples.count().map{ it > 1 && params.create_gvcf })
                     .map{
-                        meta, reads, fastq_list, create_gvcf ->
+                        meta, reads, fastq_list, alignment_file, create_gvcf ->
                             def meta_new = meta.clone()
                             meta_new['create_gvcf'] = create_gvcf
 
-                            [ meta_new, reads, fastq_list ]
+                            [ meta_new, reads, fastq_list, alignment_file ]
                     }
 
     // Verify no duplicate samples exist
     ch_samples
-        .map{ meta, reads, fastq_list -> [ reads ] }
+        .map{ meta, reads, fastq_list, alignment_file -> meta.id }
         .collect()
         .map{
-            def duplicates = it.findAll{ sample -> it.count(sample) > 1 }.unique()
+            def duplicates = it.findAll{ id -> it.count(id) > 1 }.unique()
             if (duplicates) {
-                error "Duplicate entries found in channel:\n${duplicates.flatten()}"
+                error "Duplicate sample IDs found in channel:\n${duplicates.join('\n')}"
             }
         }
 
@@ -171,8 +180,8 @@ workflow DRAGEN_CGS {
     //
     DRAGEN_ALIGN (
         ch_samples.filter{
-            meta, reads, fastq_list ->
-                params.validation_samples || (meta?.acc instanceof String && meta?.acc.startsWith("G"))
+            meta, reads, fastq_list, alignment_file ->
+                params.validation_samples || (meta?.acc instanceof String && (meta?.acc.startsWith("G") || meta?.acc.contains("WCN-")))
         },
         ch_intermediate_dir,
         ch_qc_cross_contamination,
@@ -180,7 +189,8 @@ workflow DRAGEN_CGS {
         ch_adapter2_file,
         ch_dbsnp_file,
         ch_qc_coverage_region,
-        ch_reference_dir
+        ch_reference_dir,
+        ch_cram_reference_file
     )
     ch_versions       = ch_versions.mix(DRAGEN_ALIGN.out.versions)
     ch_dragen_usage   = ch_dragen_usage.mix(DRAGEN_ALIGN.out.usage)
@@ -203,15 +213,15 @@ workflow DRAGEN_CGS {
         DRAGEN_ALIGN_CONTROL (
             JOINT_GENOTYPING.out.dragen_usage
                     .collect()
-                    .ifEmpty("no_joint_genotyping")  // Proceed with control alignment even if no joint genotyping
+                    .ifEmpty("no_joint_genotyping")
                     .combine(ch_samples.filter{
-                        meta, reads, fastq_list ->
-                            meta?.acc instanceof String && !meta?.acc.startsWith("G")
+                        meta, reads, fastq_list, alignment_file ->
+                            meta?.acc instanceof String && !meta?.acc.startsWith("G") && !meta?.acc.contains("WCN-")
                     })
                     .map{
-                        done, meta, reads, fastq_list ->
+                        done, meta, reads, fastq_list, alignment_file ->
                             meta['create_gvcf'] = false
-                            [ meta, reads, fastq_list ]
+                            [ meta, reads, fastq_list, alignment_file ]
                     },
             ch_intermediate_dir,
             ch_qc_cross_contamination,
@@ -219,7 +229,8 @@ workflow DRAGEN_CGS {
             ch_adapter2_file,
             ch_dbsnp_file,
             ch_qc_coverage_region,
-            ch_reference_dir
+            ch_reference_dir,
+            ch_cram_reference_file
         )
         ch_versions       = ch_versions.mix(DRAGEN_ALIGN_CONTROL.out.versions)
         ch_dragen_usage   = ch_dragen_usage.mix(DRAGEN_ALIGN_CONTROL.out.usage)
@@ -230,9 +241,9 @@ workflow DRAGEN_CGS {
     // MODULE: Parse QC metrics
     //
     PARSE_QC_METRICS (
-        ch_input_file.ifEmpty([]),
+        ch_input_file.collect().ifEmpty([]),
         ch_dragen_metrics.collect(),
-        JOINT_GENOTYPING.out.metrics.collect().ifEmpty([])
+        JOINT_GENOTYPING.out.metric_files.collect().ifEmpty([])
     )
     ch_versions = ch_versions.mix(PARSE_QC_METRICS.out.versions)
 
@@ -250,28 +261,24 @@ workflow DRAGEN_CGS {
                         ".json",
                         ".vcf",
                     ]
-
-                    [ meta.id, [files.findAll{ f -> extensions.any{ f.toString().toLowerCase().contains(it) } }] ]
+                    [ meta.id, files.findAll{ f -> extensions.any{ f.toString().toLowerCase().contains(it) } } ]
             }
             .join(
-                DRAGEN_ALIGN.out.dragen_output.map{ meta, files -> meta.id }
-                    .combine(JOINT_GENOTYPING.out.vcf_files.collect().toList().ifEmpty([]))
-                    .combine(JOINT_GENOTYPING.out.metrics.collect().toList().ifEmpty([]))
-                    .map{
-                        id, vcf_files, metric_files ->
-                            [ id, [(vcf_files + metric_files).findAll{ f -> f.toString().toLowerCase().contains(id.toLowerCase()) }] ]
-                    },
+                JOINT_GENOTYPING.out.vcf_files
+                    .flatMap()
+                    .map{ file -> [ file.baseName.split('\\.')[0], file ] }
+                    .groupTuple()
+                    .join(JOINT_GENOTYPING.out.metric_files.collect().ifEmpty([]))
+                    .map{ id, vcf_files, metric_files -> [ id, vcf_files + metric_files ] },
                 remainder: true
             )
             .map{
                 sample_name, dragen_files, joint_files ->
-                    def filtered = [dragen_files + joint_files ?: []].flatten().collectEntries{ [ (file(it).name): it ] }.values()
+                    def all_files = [dragen_files + (joint_files ?: [])].flatten().collectEntries{ [ (file(it).name): it ] }.values()
 
-                    def local_files = filtered.findAll{ file(it.toString()).exists() && file(it.toString()).isFile() } ?: []
-                    def s3_files    = (filtered - local_files).collect{ it.toString().replaceFirst("/", "source_s3:") }
-                    [ ["id": sample_name], s3_files ?: [], local_files ?: [] ]
+                    [ ["id": sample_name], all_files ]
             }
-            .mix(PARSE_QC_METRICS.out.genoox_metrics.map{ [ ["id": "Genoox_Metrics"], [], it ] })
+            .mix(PARSE_QC_METRICS.out.genoox_metrics.map{ [ ["id": "Genoox_Metrics"], [it] ] })
 
         //
         // MODULE: Transfer AWS data to GNX AWS bucket

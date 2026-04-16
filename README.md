@@ -37,15 +37,17 @@ This this pipeline will perform the following:
 
 ### Start from Illumina run directory
 
+> [!NOTE]
+> Multiple Illumina run directories and samplesheets can be provided as a comma-separated list.
+
 ```bash
 nextflow run \
   Clinical-Genomics-Laboratory/nf-cgl-cgs \
   -r v1.0.0 \
   -profile <docker/singularity/institute> \
-  --input samplesheet.xlsx \
-  --illumina_rundir <RUNDIR> \
+  --input "samplesheet_1.xlsx,samplesheet_2.xlsx" \
+  --illumina_rundir "<RUNDIR_1>,<RUNDIR_2>" \
   --batch_name 20240717_cGS \
-  --sample_info daily_accession_log.csv \
   --demux_outdir <DEMUX OUTDIR> \
   --outdir <OUTDIR>
 ```
@@ -59,7 +61,6 @@ nextflow run \
   -profile <docker/singularity/institute> \
   --fastq_list fastq_list.csv \
   --batch_name 20240717_cGS \
-  --sample_info daily_accession_log.csv \
   --outdir <OUTDIR>
 ```
 

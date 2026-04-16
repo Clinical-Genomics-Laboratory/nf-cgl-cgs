@@ -20,12 +20,12 @@
                 "fastq_list": {
                     "type": "string",
                     "format": "file-path",
-                    "description": "Path to samplesheet containing the columns: RGID, RGSM, RGLB, Lane, Read1File, Read2File."
+                    "description": "Path to samplesheet containing the columns: RGID, RGSM, RGLB, Lane, Read1File, Read2File. Used to provide FASTQ files as input."
                 },
-                "sample_info": {
+                "bam_cram_list": {
                     "type": "string",
                     "format": "file-path",
-                    "description": "Path to samplesheet containing sample information."
+                    "description": "Path to samplesheet containing the columns: ID, File. Used to provide BAM or CRAM files as input."
                 },
                 "batch_name": {
                     "type": "string",
@@ -64,6 +64,12 @@
                     "default": 10,
                     "fa_icon": "fas fa-hdd"
                 },
+                "min_bam_cram_size": {
+                    "type": "integer",
+                    "description": "Minimum expected size of BAM/CRAM files in MB. Files smaller than this will cause an error.",
+                    "default": 10,
+                    "fa_icon": "fas fa-hdd"
+                },
                 "email": {
                     "type": "string",
                     "description": "Email address for completion summary.",
@@ -75,6 +81,11 @@
                     "type": "string",
                     "description": "MultiQC report title. Printed as page header, used for filename if not otherwise specified.",
                     "fa_icon": "fas fa-file-signature"
+                },
+                "bcl_first_tile": {
+                    "type": "boolean",
+                    "description": "Only demultiplex the first tile of the flowcell.",
+                    "default": false
                 }
             }
         },
@@ -147,6 +158,11 @@
                     "type": "string",
                     "description": "Path to the directory containing the reference hash table.",
                     "format": "directory-path"
+                },
+                "cram_reference": {
+                    "type": "string",
+                    "description": "Path to the reference FASTA file for CRAM input.",
+                    "format": "file-path"
                 },
                 "qc_coverage_region": {
                     "type": "string",
