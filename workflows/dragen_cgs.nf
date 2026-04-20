@@ -255,6 +255,7 @@ workflow DRAGEN_CGS {
 
         // Group metric files by sample id
         def metrics_by_id = JOINT_GENOTYPING.out.metric_files
+            .flatMap()
             .map{ file -> [ file.baseName.split('\\.')[0], file ] }
             .groupTuple()
 
