@@ -129,6 +129,7 @@ workflow DRAGEN_CGS {
     GET_SAMPLE_METADATA (
         ch_samples
             .map{ meta, reads, fastq_list, alignment_file -> meta.acc ?: meta.id }
+            .filter { it instanceof String && (it.startsWith("G") || it.contains("WCN-")) }
             .collect()
             .filter{ it.size() > 0 }
     )
