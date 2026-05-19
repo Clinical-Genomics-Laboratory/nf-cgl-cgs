@@ -18,7 +18,7 @@ process STAGE_DATA {
     task.ext.when == null || task.ext.when
 
     script:
-    def files = [s3_files].flatten().join('\n')
+    def files = [s3_files].flatten().findAll().join('\n')
     """
     export RCLONE_CONFIG_SOURCE_S3_TYPE=s3
     export RCLONE_CONFIG_SOURCE_S3_PROVIDER=AWS
@@ -27,7 +27,7 @@ process STAGE_DATA {
     export RCLONE_CONFIG_SOURCE_S3_SECRET_ACCESS_KEY=\$AWS_SECRET_KEY
 
     mkdir -p ${meta.id}
-    echo "${files}" > file_list.txt
+    printf "%s" "${files}" > file_list.txt
 
     if [[ -s file_list.txt ]]; then
         mkdir -p staging
@@ -66,7 +66,7 @@ process STAGE_DATA {
     """
 
     stub:
-    def files = [s3_files].flatten().join('\n')
+    def files = [s3_files].flatten().findAll().join('\n')
     """
     export RCLONE_CONFIG_SOURCE_S3_TYPE=s3
     export RCLONE_CONFIG_SOURCE_S3_PROVIDER=AWS
@@ -75,7 +75,7 @@ process STAGE_DATA {
     export RCLONE_CONFIG_SOURCE_S3_SECRET_ACCESS_KEY=\$AWS_SECRET_KEY
 
     mkdir -p ${meta.id}
-    echo "${files}" > file_list.txt
+    printf "%s" "${files}" > file_list.txt
 
     if [[ -s file_list.txt ]]; then
         while IFS= read -r line; do

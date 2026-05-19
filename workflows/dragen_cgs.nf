@@ -258,10 +258,12 @@ workflow DRAGEN_CGS {
         DRAGEN_ALIGN.out.dragen_output
             .map{
                 meta, files ->
-                    def local_files = files.findAll{ file(it.toString()).exists() && file(it.toString()).isFile() } ?: []
-                    def s3_files = (files - local_files).collect() //{ it.toString().replaceFirst(/^\/?/, 'source_s3:') }
+                    def grouped_files = [files].flatten().groupBy{ f -> f.toUri()?.scheme?.equalsIgnoreCase('s3') ? 's3' : 'local' }
 
-                    [ meta, s3_files ?: [], local_files ?: [] ]
+                    def s3_files    = grouped_files.s3?.collect() ?: []
+                    def local_files = grouped_files.local ?: []
+
+                    [ meta, s3_files, local_files ]
             }
     )
     ch_versions = ch_versions.mix(STAGE_DATA.out.versions)
