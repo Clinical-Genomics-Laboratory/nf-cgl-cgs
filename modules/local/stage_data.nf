@@ -43,7 +43,6 @@ process STAGE_DATA {
             --log-level INFO \\
             --transfers ${task.cpus} \\
             --log-file stage_data.log \\
-            --s3-location-constraint "\$AWS_REGION" \\
             || { echo "Error: Rclone download failed for files in file_list.txt"; exit 1; }
 
         echo "Moving files from staging/ to ${meta.id}/"
@@ -54,7 +53,7 @@ process STAGE_DATA {
 
     if [[ -d "local_files" ]] && [[ -n "${local_files}" ]]; then
         echo "Staging local files from local_files/"
-        cp -RL local_files/* ${meta.id}/
+        cp -RL local_files/* "${meta.id}/"
     else
         echo "No local files to stage."
     fi
