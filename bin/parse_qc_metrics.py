@@ -376,6 +376,26 @@ def main() -> None:
         df = parse_metrics(files_by_type[key], config["metrics"], config["header"])
         if key == "mapping" and "Total bases" in df.columns:
             df.insert(3, "Total giga bases", round(df["Total bases"].astype(float) / 1e9, 2))
+
+        # Fuzzy match SAMPLE ID with mgi_worksheet if available to avoid duplicate rows during merge
+        if not mgi_worksheet.empty and not df.empty and "SAMPLE ID" in df.columns:
+            worksheet_ids = mgi_worksheet["SAMPLE ID"].dropna().astype(str).unique().tolist()
+            mapping = {}
+            for qc_id in df["SAMPLE ID"].unique():
+                if pd.isna(qc_id):
+                    continue
+                qc_id_str = str(qc_id)
+                if qc_id_str in worksheet_ids or not qc_id_str:
+                    continue
+                for w_id in worksheet_ids:
+                    if w_id.startswith(qc_id_str) and (
+                        len(w_id) == len(qc_id_str) or not w_id[len(qc_id_str)].isalnum()
+                    ):
+                        mapping[qc_id] = w_id
+                        break
+            if mapping:
+                df["SAMPLE ID"] = df["SAMPLE ID"].replace(mapping)
+
         qc_dfs[key] = df
 
     # Create output files
