@@ -4,10 +4,14 @@ import argparse
 import datetime as dt
 import glob
 import os
+import logging
 from functools import reduce
 from typing import Optional
 
 import pandas as pd
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 METRIC_CONFIGS = {
     "mapping": {
@@ -371,29 +375,48 @@ def main() -> None:
                 files_by_type[key].append(f)
                 break
 
+    # Prepare worksheet IDs for prefix matching
+    worksheet_ids = []
+    worksheet_upper_map = {}
+    if not mgi_worksheet.empty and "SAMPLE ID" in mgi_worksheet.columns:
+        # Sort worksheet IDs for deterministic matching if multiple prefixes exist
+        worksheet_ids = sorted(mgi_worksheet["SAMPLE ID"].dropna().astype(str).unique().tolist())
+        worksheet_upper_map = {w.upper(): w for w in worksheet_ids}
+
     qc_dfs = {}
     for key, config in METRIC_CONFIGS.items():
         df = parse_metrics(files_by_type[key], config["metrics"], config["header"])
         if key == "mapping" and "Total bases" in df.columns:
             df.insert(3, "Total giga bases", round(df["Total bases"].astype(float) / 1e9, 2))
 
-        # Fuzzy match SAMPLE ID with mgi_worksheet if available to avoid duplicate rows during merge
-        if not mgi_worksheet.empty and not df.empty and "SAMPLE ID" in df.columns:
-            worksheet_ids = mgi_worksheet["SAMPLE ID"].dropna().astype(str).unique().tolist()
+        # Prefix match SAMPLE ID with mgi_worksheet if available to avoid duplicate rows during merge
+        if worksheet_ids and not df.empty and "SAMPLE ID" in df.columns:
             mapping = {}
             for qc_id in df["SAMPLE ID"].unique():
-                if pd.isna(qc_id):
+                if pd.isna(qc_id) or not str(qc_id).strip():
                     continue
-                qc_id_str = str(qc_id)
-                if qc_id_str in worksheet_ids or not qc_id_str:
+
+                qc_id_str = str(qc_id).strip()
+                qc_id_upper = qc_id_str.upper()
+
+                # Skip if there is an exact case-insensitive match
+                if qc_id_upper in worksheet_upper_map:
                     continue
-                for w_id in worksheet_ids:
-                    if w_id.startswith(qc_id_str) and (
-                        len(w_id) == len(qc_id_str) or not w_id[len(qc_id_str)].isalnum()
-                    ):
-                        mapping[qc_id] = w_id
-                        break
+
+                # Find worksheet IDs where the QC ID is a prefix followed by a non-alphanumeric separator
+                matches = [
+                    w_id
+                    for w_id in worksheet_ids
+                    if w_id.upper().startswith(qc_id_upper) and not w_id[len(qc_id_str)].isalnum()
+                ]
+
+                if len(matches) == 1:
+                    mapping[qc_id] = matches[0]
+                elif len(matches) > 1:
+                    logger.warning("Ambiguous prefix match for %s: %s. Skipping remapping.", qc_id_str, matches)
+
             if mapping:
+                logger.info("Remapping SAMPLE IDs for %s metrics: %s", key, mapping)
                 df["SAMPLE ID"] = df["SAMPLE ID"].replace(mapping)
 
         qc_dfs[key] = df
