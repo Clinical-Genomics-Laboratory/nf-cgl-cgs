@@ -256,6 +256,7 @@ workflow DRAGEN_CGS {
     //
     STAGE_DATA (
         DRAGEN_ALIGN.out.dragen_output
+            .mix(DRAGEN_ALIGN_CONTROL.out.dragen_output)
             .map{
                 meta, files ->
                     def grouped_files = [files].flatten().groupBy{ f -> f.toUri()?.scheme?.equalsIgnoreCase('s3') ? 's3' : 'local' }
