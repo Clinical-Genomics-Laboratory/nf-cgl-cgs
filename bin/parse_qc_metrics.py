@@ -380,7 +380,7 @@ def main() -> None:
     worksheet_upper_map = {}
     if not mgi_worksheet.empty and "SAMPLE ID" in mgi_worksheet.columns:
         # Sort worksheet IDs for deterministic matching if multiple prefixes exist
-        worksheet_ids = sorted(mgi_worksheet["SAMPLE ID"].dropna().astype(str).unique().tolist())
+        worksheet_ids = sorted(mgi_worksheet["SAMPLE ID"].dropna().astype(str).str.strip().unique().tolist())
         worksheet_upper_map = {w.upper(): w for w in worksheet_ids}
 
     qc_dfs = {}
@@ -403,11 +403,17 @@ def main() -> None:
                 if qc_id_upper in worksheet_upper_map:
                     continue
 
-                # Find worksheet IDs where the QC ID is a prefix followed by a non-alphanumeric separator
+                # Find worksheet IDs where the QC ID is a prefix followed by a non-alphanumeric separator.
+                # Note: This logic assumes that the QC ID (e.g. from filename) is a prefix of the
+                # worksheet ID. The reverse scenario is not currently handled.
                 matches = [
                     w_id
                     for w_id in worksheet_ids
-                    if w_id.upper().startswith(qc_id_upper) and not w_id[len(qc_id_str)].isalnum()
+                    if (
+                        w_id.upper().startswith(qc_id_upper)
+                        and len(w_id) > len(qc_id_str)
+                        and not w_id[len(qc_id_str)].isalnum()
+                    )
                 ]
 
                 if len(matches) == 1:
