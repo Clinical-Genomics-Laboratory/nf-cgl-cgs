@@ -279,13 +279,13 @@ workflow DRAGEN_CGS {
         // Group VCF files by sample id
         def vcf_by_id = JOINT_GENOTYPING.out.vcf_files
             .flatMap()
-            .map{ file -> [ file.baseName.split('\\.')[0], file ] }
+            .map{ f -> [ file(f).baseName.split('\\.')[0], f ] }
             .groupTuple()
 
         // Group metric files by sample id
         def metrics_by_id = JOINT_GENOTYPING.out.metric_files
             .flatMap()
-            .map{ file -> [ file.baseName.split('\\.')[0], file ] }
+            .map{ f -> [ file(f).baseName.split('\\.')[0], f ] }
             .groupTuple()
 
         ch_upload_files = STAGE_DATA.out.staged_files
