@@ -4,10 +4,13 @@ import argparse
 import datetime as dt
 import glob
 import os
+import logging
 from functools import reduce
 from typing import Optional
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 METRIC_CONFIGS = {
     "mapping": {
@@ -76,15 +79,18 @@ METRIC_CONFIGS = {
 
 
 def parseArgs() -> argparse.Namespace:
-    """
-    Parse command line arguments.
+    """Parse command line arguments.
 
     Returns:
         Parsed command line arguments.
     """
-    parser = argparse.ArgumentParser(description="Find, parse, and create summary QC metric files.", add_help=False)
+    parser = argparse.ArgumentParser(
+        description="Find, parse, and create summary QC metric files.", add_help=False
+    )
 
-    parser.add_argument("-h", "--help", action="help", help="Show usage information and exit.")
+    parser.add_argument(
+        "-h", "--help", action="help", help="Show usage information and exit."
+    )
     parser.add_argument(
         "-m",
         "--mgi_worksheet",
@@ -97,15 +103,20 @@ def parseArgs() -> argparse.Namespace:
         help="Directory to search for QC metric files.",
         required=True,
     )
-    parser.add_argument("-o", "--outdir", help="Directory to save summary QC metric files.")
-    parser.add_argument("-p", "--prefix", help="Filename prefix to append to output files.")
+    parser.add_argument(
+        "-o", "--outdir", help="Directory to save summary QC metric files."
+    )
+    parser.add_argument(
+        "-p", "--prefix", help="Filename prefix to append to output files."
+    )
 
     return parser.parse_args()
 
 
-def parse_metrics(files: list[str], metric_dict: dict, line_startswith: str) -> pd.DataFrame:
-    """
-    Parse list of files for items in dictionary.
+def parse_metrics(
+    files: list[str], metric_dict: dict, line_startswith: str
+) -> pd.DataFrame:
+    """Parse list of files for items in dictionary.
 
     Args:
         files: List of files to search through for metrics.
@@ -131,12 +142,20 @@ def parse_metrics(files: list[str], metric_dict: dict, line_startswith: str) -> 
         try:
             with open(file, "r") as f:
                 for line in f:
-                    if line_startswith and not line.startswith(line_startswith) and line_startswith not in line:
+                    if (
+                        line_startswith
+                        and not line.startswith(line_startswith)
+                        and line_startswith not in line
+                    ):
                         continue
 
                     parts = line.strip().split(",")
                     for search_key, metrics in search_map.items():
-                        if any(part.strip() == search_key or part.strip() == f"PCT {search_key}" for part in parts):
+                        if any(
+                            part.strip() == search_key
+                            or part.strip() == f"PCT {search_key}"
+                            for part in parts
+                        ):
                             for metric_name, col_idx in metrics:
                                 if col_idx < len(parts):
                                     data_dict[metric_name] = parts[col_idx].strip()
@@ -155,8 +174,7 @@ def save_mgi_metrics(
     filename_prefix: str,
     outdir: str,
 ) -> None:
-    """
-    Save required QC metrics for MGI.
+    """Save required QC metrics for MGI.
 
     Args:
         mgi_worksheet: QC metrics sheet.
@@ -211,9 +229,10 @@ def save_mgi_metrics(
     )
 
 
-def save_all_metrics(all_qc_dataframes: list[pd.DataFrame], filename_prefix: str, outdir: str) -> None:
-    """
-    Save all QC metrics.
+def save_all_metrics(
+    all_qc_dataframes: list[pd.DataFrame], filename_prefix: str, outdir: str
+) -> None:
+    """Save all QC metrics.
 
     Args:
         all_qc_dataframes: List of QC metric DataFrames.
@@ -231,7 +250,11 @@ def save_all_metrics(all_qc_dataframes: list[pd.DataFrame], filename_prefix: str
         Returns:
             Merged DataFrame.
         """
-        return pd.merge(left, right, on="SAMPLE ID", how="outer") if not right.empty else left
+        return (
+            pd.merge(left, right, on="SAMPLE ID", how="outer")
+            if not right.empty
+            else left
+        )
 
     all_qc_metrics = reduce(
         merge_dfs,
@@ -251,8 +274,7 @@ def save_genoox_metrics(
     filename_prefix: str,
     outdir: str,
 ) -> None:
-    """
-    Create Excel workbook that contains the following sheets: QC Metrics - qPCR.
+    """Create Excel workbook that contains the following sheets: QC Metrics - qPCR.
 
     Args:
         mgi_worksheet: QC metrics sheet from the MGI worksheet input.
@@ -268,16 +290,20 @@ def save_genoox_metrics(
         "260/280",
         "Library Input (ng)",
     ]
-    cleaned_mgi_worksheet = mgi_worksheet[[c for c in required_columns if c in mgi_worksheet.columns]].copy()
+    cleaned_mgi_worksheet = mgi_worksheet[
+        [c for c in required_columns if c in mgi_worksheet.columns]
+    ].copy()
 
     if cleaned_mgi_worksheet["SAMPLE ID"].isnull().all() or cleaned_mgi_worksheet.empty:
-        cleaned_mgi_worksheet = cleaned_mgi_worksheet.merge(mapping_metrics, on="SAMPLE ID", how="right")
+        cleaned_mgi_worksheet = cleaned_mgi_worksheet.merge(
+            mapping_metrics, on="SAMPLE ID", how="right"
+        )
         cleaned_mgi_worksheet = cleaned_mgi_worksheet[required_columns]
 
     # Filter for SAMPLE ID values that are strings and start with 'G' or contain 'WCN-'
-    is_genoox_sample = cleaned_mgi_worksheet["SAMPLE ID"].str.startswith("G", na=False) | cleaned_mgi_worksheet[
-        "SAMPLE ID"
-    ].str.contains("WCN-", na=False)
+    is_genoox_sample = cleaned_mgi_worksheet["SAMPLE ID"].str.startswith(
+        "G", na=False
+    ) | cleaned_mgi_worksheet["SAMPLE ID"].str.contains("WCN-", na=False)
     cleaned_mgi_worksheet = cleaned_mgi_worksheet[is_genoox_sample]
 
     if cleaned_mgi_worksheet.empty:
@@ -341,14 +367,16 @@ def read_file_to_dataframe(file: Optional[str]) -> pd.DataFrame:
 
 
 def main() -> None:
-    """
-    Parse QC metrics for all files and save to Excel workbooks.
-    """
+    """Parse QC metrics for all files and save to Excel workbooks."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
     args = parseArgs()
 
     inputdir = os.path.abspath(args.inputdir)
     if args.mgi_worksheet:
-        mgi_worksheet = pd.concat([read_file_to_dataframe(f) for f in args.mgi_worksheet], ignore_index=True)
+        mgi_worksheet = pd.concat(
+            [read_file_to_dataframe(f) for f in args.mgi_worksheet], ignore_index=True
+        )
     else:
         mgi_worksheet = read_file_to_dataframe(None)
 
@@ -361,7 +389,9 @@ def main() -> None:
         timestamp = dt.date.today().strftime("%Y%m%d")
         filename_prefix = f"{timestamp}_CGS"
 
-    metric_files = [f.strip() for f in glob.glob(f"{inputdir}/**/*metrics.csv", recursive=True)]
+    metric_files = [
+        f.strip() for f in glob.glob(f"{inputdir}/**/*metrics.csv", recursive=True)
+    ]
 
     files_by_type = {k: [] for k in METRIC_CONFIGS}
 
@@ -371,11 +401,69 @@ def main() -> None:
                 files_by_type[key].append(f)
                 break
 
+    # Prepare worksheet IDs for prefix matching
+    worksheet_ids = []
+    worksheet_upper_map = {}
+    if not mgi_worksheet.empty and "SAMPLE ID" in mgi_worksheet.columns:
+        # Sort worksheet IDs for deterministic matching if multiple prefixes exist
+        worksheet_ids = sorted(
+            mgi_worksheet["SAMPLE ID"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .unique()
+            .tolist()
+        )
+        worksheet_upper_map = {w.upper(): w for w in worksheet_ids}
+
     qc_dfs = {}
     for key, config in METRIC_CONFIGS.items():
         df = parse_metrics(files_by_type[key], config["metrics"], config["header"])
         if key == "mapping" and "Total bases" in df.columns:
-            df.insert(3, "Total giga bases", round(df["Total bases"].astype(float) / 1e9, 2))
+            df.insert(
+                3, "Total giga bases", round(df["Total bases"].astype(float) / 1e9, 2)
+            )
+
+        # Prefix match SAMPLE ID with mgi_worksheet if available to avoid duplicate rows during merge
+        if worksheet_ids and not df.empty and "SAMPLE ID" in df.columns:
+            mapping = {}
+            for qc_id in df["SAMPLE ID"].unique():
+                if pd.isna(qc_id) or not str(qc_id).strip():
+                    continue
+
+                qc_id_str = str(qc_id).strip()
+                qc_id_upper = qc_id_str.upper()
+
+                # Skip if there is an exact case-insensitive match
+                if qc_id_upper in worksheet_upper_map:
+                    continue
+
+                # Find worksheet IDs where the QC ID is a prefix followed by a non-alphanumeric separator.
+                # Note: This logic assumes that the QC ID (e.g. from filename) is a prefix of the
+                # worksheet ID. The reverse scenario is not currently handled.
+                matches = [
+                    w_id
+                    for w_id in worksheet_ids
+                    if (
+                        w_id.upper().startswith(qc_id_upper)
+                        and len(w_id) > len(qc_id_str)
+                        and not w_id[len(qc_id_str)].isalnum()
+                    )
+                ]
+
+                if len(matches) == 1:
+                    mapping[qc_id] = matches[0]
+                elif len(matches) > 1:
+                    logger.warning(
+                        "Ambiguous prefix match for %s: %s. Skipping remapping.",
+                        qc_id_str,
+                        matches,
+                    )
+
+            if mapping:
+                logger.info("Remapping SAMPLE IDs for %s metrics: %s", key, mapping)
+                df["SAMPLE ID"] = df["SAMPLE ID"].replace(mapping)
+
         qc_dfs[key] = df
 
     # Create output files
@@ -391,7 +479,9 @@ def main() -> None:
     )
 
     ## All metrics
-    all_qc_dataframes = [mgi_worksheet] + [qc_dfs[k] for k in ["mapping", "wgs", "qc_region", "vc", "cnv"]]
+    all_qc_dataframes = [mgi_worksheet] + [
+        qc_dfs[k] for k in ["mapping", "wgs", "qc_region", "vc", "cnv"]
+    ]
     save_all_metrics(all_qc_dataframes, f"{filename_prefix}_All", outdir)
 
 
