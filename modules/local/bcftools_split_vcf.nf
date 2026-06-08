@@ -40,6 +40,7 @@ process BCFTOOLS_SPLIT_VCF {
 
         # Create an MD5 checksum for the new file
         md5sum "\$out" | sed "s|split_vcf/||g" > "\${out}.md5sum"
+        md5sum "\$out.tbi" | sed "s|split_vcf/||g" > "\${out}.tbi.md5sum"
     }
     export -f process_vcf
 
@@ -68,8 +69,9 @@ process BCFTOOLS_SPLIT_VCF {
 
     for sample in \$(bcftools query -l ${joint_vcf_file}); do
         touch "split_vcf/\${sample}\${ext}" \\
+            "split_vcf/\${sample}\${ext}.md5sum" \\
             "split_vcf/\${sample}\${ext}.tbi" \\
-            "split_vcf/\${sample}\${ext}.md5sum"
+            "split_vcf/\${sample}\${ext}.tbi.md5sum"
     done
 
     cat <<-END_VERSIONS > versions.yml
