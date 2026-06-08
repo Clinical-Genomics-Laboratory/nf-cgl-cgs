@@ -10,7 +10,6 @@ from typing import Optional
 
 import pandas as pd
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 METRIC_CONFIGS = {
@@ -348,6 +347,8 @@ def main() -> None:
     """
     Parse QC metrics for all files and save to Excel workbooks.
     """
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
     args = parseArgs()
 
     inputdir = os.path.abspath(args.inputdir)
