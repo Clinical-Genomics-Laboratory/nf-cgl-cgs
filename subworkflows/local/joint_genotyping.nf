@@ -119,8 +119,10 @@ workflow JOINT_GENOTYPING {
                                             def indel_percent = indels_list.collect{ it.split(',')[4].toFloat()   }.sum()
 
                                             def output = [
-                                                sample_lines.findAll      {   it =~ /Reads Processed|Child Sample|Percent Autosome Callability/  },
-                                                joint_sample_lines.findAll{ !(it =~ /Reads Processed|Child Sample|Percent Autosome Callability/) },
+                                                joint_sample_lines.find{ it =~ "Number of samples" },
+                                                sample_lines.find{       it =~ "Reads Processed"   },
+                                                sample_lines.find{       it =~ "Child Sample"      },
+                                                joint_sample_lines,
                                                 "JOINT CALLER POSTFILTER,${sample_name},Number of Indels,${indel_count},${indel_percent.round(2)}"
                                             ].flatten().findAll().join('\n')
 
