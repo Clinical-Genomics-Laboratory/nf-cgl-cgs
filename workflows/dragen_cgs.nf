@@ -10,6 +10,7 @@ include { DRAGEN_ALIGN                         } from '../modules/local/dragen_a
 include { DRAGEN_ALIGN as DRAGEN_ALIGN_CONTROL } from '../modules/local/dragen_align'
 include { JOINT_GENOTYPING                     } from '../subworkflows/local/joint_genotyping'
 include { PARSE_QC_METRICS                     } from '../modules/local/parse_qc_metrics'
+include { STAGE_DATA                           } from '../modules/local/stage_data'
 include { TRANSFER_DATA_AWS                    } from '../modules/local/transfer_data_aws'
 
 /*
@@ -250,21 +251,44 @@ workflow DRAGEN_CGS {
     )
     ch_versions = ch_versions.mix(PARSE_QC_METRICS.out.versions)
 
-    // Transfer data to AWS bucket
+    //
+    // MODULE: Stage local and AWS data into a sample-specific directory
+    //
+    STAGE_DATA (
+        DRAGEN_ALIGN.out.dragen_output
+            .mix(DRAGEN_ALIGN_CONTROL.out.dragen_output)
+            .map{
+                meta, files ->
+                    def grouped_files = [files].flatten().groupBy{ f -> f.toUri()?.scheme?.equalsIgnoreCase('s3') ? 's3' : 'local' }
+
+                    def s3_files    = grouped_files.s3?.collect() ?: []
+                    def local_files = grouped_files.local ?: []
+
+                    [ meta, s3_files, local_files ]
+            }
+    )
+    ch_versions = ch_versions.mix(STAGE_DATA.out.versions)
+
+    STAGE_DATA.out.stage_log
+        .collectFile(
+            name: "stage_data.log",
+            storeDir: "${params.outdir}/pipeline_info"
+        )
+
     if (params.transfer_data) {
         // Group VCF files by sample id
         def vcf_by_id = JOINT_GENOTYPING.out.vcf_files
             .flatMap()
-            .map{ file -> [ file.baseName.split('\\.')[0], file ] }
+            .map{ f -> [ file(f).baseName.split('\\.')[0], f ] }
             .groupTuple()
 
         // Group metric files by sample id
         def metrics_by_id = JOINT_GENOTYPING.out.metric_files
             .flatMap()
-            .map{ file -> [ file.baseName.split('\\.')[0], file ] }
+            .map{ f -> [ file(f).baseName.split('\\.')[0], f ] }
             .groupTuple()
 
-        ch_upload_files = DRAGEN_ALIGN.out.dragen_output
+        ch_upload_files = STAGE_DATA.out.staged_files
             .map{
                 meta, files ->
                     def extensions = [
@@ -310,10 +334,10 @@ workflow DRAGEN_CGS {
         ch_versions = ch_versions.mix(TRANSFER_DATA_AWS.out.versions)
 
         TRANSFER_DATA_AWS.out.transfer_logs
-                            .collectFile(
-                                name: "transfer_data_aws.log",
-                                storeDir: "${params.outdir}/pipeline_info"
-                            )
+            .collectFile(
+                name: "transfer_data_aws.log",
+                storeDir: "${params.outdir}/pipeline_info"
+            )
     }
 
     // Output DRAGEN usage information
