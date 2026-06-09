@@ -99,9 +99,10 @@ workflow DRAGEN_CGS {
     ch_samples      // channel: [ val(meta), path(reads), path(fastq_list), path(alignment_file) ]
 
     main:
-    ch_versions       = Channel.empty()
-    ch_dragen_usage   = Channel.empty()
-    ch_dragen_metrics = Channel.empty()
+    ch_versions           = Channel.empty()
+    ch_dragen_usage       = Channel.empty()
+    ch_dragen_metrics     = Channel.empty()
+    ch_dragen_control_out = Channel.empty()
 
     def isClinicalAcc = { it -> it instanceof String && (it.startsWith("G") || it.contains("WCN-")) }
 
@@ -239,6 +240,7 @@ workflow DRAGEN_CGS {
         ch_versions       = ch_versions.mix(DRAGEN_ALIGN_CONTROL.out.versions)
         ch_dragen_usage   = ch_dragen_usage.mix(DRAGEN_ALIGN_CONTROL.out.usage)
         ch_dragen_metrics = ch_dragen_metrics.mix(DRAGEN_ALIGN_CONTROL.out.metrics)
+        ch_dragen_control_out = DRAGEN_ALIGN_CONTROL.out.dragen_output
     }
 
     //
@@ -256,7 +258,7 @@ workflow DRAGEN_CGS {
     //
     STAGE_DATA (
         DRAGEN_ALIGN.out.dragen_output
-            .mix(DRAGEN_ALIGN_CONTROL.out.dragen_output)
+            .mix(ch_dragen_control_out)
             .map{
                 meta, files ->
                     def grouped_files = [files].flatten().groupBy{ f -> f.toUri()?.scheme?.equalsIgnoreCase('s3') ? 's3' : 'local' }
