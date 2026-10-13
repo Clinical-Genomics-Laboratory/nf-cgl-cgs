@@ -5,6 +5,7 @@
 */
 
 include { CREATE_DEMULTIPLEX_SAMPLESHEET   } from '../../modules/local/create_demultiplex_samplesheet'
+include { CREATE_DEMUX_FASTQ_LIST          } from '../../modules/local/create_demux_fastq_list'
 include { DRAGEN_DEMULTIPLEX               } from '../../modules/local/dragen_demultiplex'
 include { INPUT_CHECK as VERIFY_FASTQ_LIST } from '../../subworkflows/local/input_check'
 
@@ -56,6 +57,7 @@ workflow DEMULTIPLEX {
 
     take:
     ch_samplesheet  // channel: [ path(file) ]
+    ch_fastq_list   // channel: [ path(file) ]
 
     main:
     ch_illumina_run_dir = Channel.empty()
@@ -122,8 +124,20 @@ workflow DEMULTIPLEX {
                         }
                         .join(
                             ch_illumina_run_dir.filter{ it != null }.map{ [ it.name.toString().split('_').last().takeRight(9), it ] },
-                            by: 0
+                            by: 0,
+                            remainder: true
                         )
+                        // An unmatched run directory would otherwise be dropped silently, letting alignment start without demultiplexing
+                        .filter{
+                            flowcell, samplesheet, illumina_run_dir ->
+                                if (!samplesheet) {
+                                    error("Illumina run directory '${illumina_run_dir}' (flowcell '${flowcell}') does not match any 'Flowcell ID' in the input samplesheet.")
+                                }
+                                if (!illumina_run_dir) {
+                                    log.warn("Flowcell '${flowcell}' in the input samplesheet does not match any '--illumina_rundir' and will not be demultiplexed.")
+                                }
+                                illumina_run_dir
+                        }
 
     //
     // MODULE: Create demultiplex samplesheet
@@ -154,43 +168,23 @@ workflow DEMULTIPLEX {
     ch_versions = ch_versions.mix(DRAGEN_DEMULTIPLEX.out.versions)
 
     //
-    // SUBWORKFLOW: Verify fastq_list.csv
+    // SUBWORKFLOW: Verify fastq_list.csv, grouping FastQ files from all flowcells and the input FastQ list by accession
     //
     VERIFY_FASTQ_LIST (
         [],
-        DRAGEN_DEMULTIPLEX.out.fastq_list,
+        DRAGEN_DEMULTIPLEX.out.fastq_list.map{ meta, fastq_list -> fastq_list }.mix(ch_fastq_list),
         Channel.empty()
     )
     ch_versions = ch_versions.mix(VERIFY_FASTQ_LIST.out.versions)
 
-    // Use 'params.demux_outdir' path for paths in 'fastq_list.csv' and save
+    //
+    // MODULE: Create 'fastq_list.csv' report for each flowcell, keeping the FastQ paths in the work directory
+    //
     if (params.demux_outdir) {
-        def batch_name = params.batch_name ?: new java.util.Date().format('yyyyMMdd') + '_CGS'
-
-        ch_fastq_list = VERIFY_FASTQ_LIST.out.samples
-            .map{ meta, reads, fastq_list, alignment_file -> fastq_list }
-            .splitCsv( header: true )
-            .map{
-                row ->
-                    def read1_parts = row['Read1File'].split('/')
-                    def read1 = read1_parts.size() > 1 ? read1_parts[-2..-1].join('/') : read1_parts[-1]
-
-                    def read2_parts = row['Read2File'].split('/')
-                    def read2 = read2_parts.size() > 1 ? read2_parts[-2..-1].join('/') : read2_parts[-1]
-
-                    // Get absolute path of 'params.demux_outdir'
-                    def demux_outdir = file(params.demux_outdir).toAbsolutePath().toString()
-
-                    row['Read1File'] = "${demux_outdir}/${read1}"
-                    row['Read2File'] = "${demux_outdir}/${read2}"
-
-                    return "${row.keySet().join(',')}\n${row.values().join(',')}\n"
-            }
-            .collectFile(
-                name      : "fastq_list.csv",
-                keepHeader: true,
-                storeDir  : "${params.demux_outdir}/${batch_name}/Reports/"
-            )
+        CREATE_DEMUX_FASTQ_LIST (
+            DRAGEN_DEMULTIPLEX.out.fastq_list
+        )
+        ch_versions = ch_versions.mix(CREATE_DEMUX_FASTQ_LIST.out.versions)
     }
 
     emit:

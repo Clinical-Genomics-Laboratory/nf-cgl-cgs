@@ -30,6 +30,7 @@ Table of contents:
 This section describes the configuration and credentials required to successfully run the pipeline.
 
 ### Required: CoPathBI
+
 The pipeline requires access to the CoPathBI database for retrieving sample information. To enable this, you need to configure Nextflow secrets with your database credentials. Follow these steps:
 
 1. Store your credentials securely using Nextflow's secrets feature.
@@ -49,7 +50,6 @@ nextflow secrets set COPATHBI_SERVER <KEY>
 | COPATHBI_DATABASE | The name of the CoPathBI database.             |
 | COPATHBI_USER     | The user name to access the CoPathBI database. |
 | COPATHBI_PASSWORD | The password to access the CoPathBI database.  |
-
 
 ### Optional: AWS
 
@@ -93,7 +93,6 @@ nextflow secrets set GNX_ACCESS_KEY <KEY>
 | ------------------- | ------------------------------------------- |
 | AWS_DRAGEN_USER     | Username to access Illumina's DRAGEN on AWS |
 | AWS_DRAGEN_PASSWORD | Password to access Illumina's DRAGEN on AWS |
-
 
 ## Input parameters
 
