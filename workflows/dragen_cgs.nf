@@ -155,7 +155,14 @@ workflow DRAGEN_CGS {
                             .splitCsv(header: true)
                             .map{ [ it.SpcNum, it.Sex?.toLowerCase() ] }
                             .toList()
-                            .map{ it.collectEntries() }
+                            .map{
+                                entries ->
+                                    def duplicates = entries.countBy{ it[0] }.findAll{ it.value > 1 }.keySet()
+                                    if (duplicates) {
+                                        log.warn("Sample metadata has duplicate SpcNum ${duplicates}, using the last Sex value for each.")
+                                    }
+                                    entries.collectEntries()
+                            }
                     )
                     .map{
                         meta, reads, fastq_list, alignment_file, sex_by_acc ->
