@@ -67,7 +67,7 @@ def read_rows(lines: list[str]) -> tuple[list[str], list[dict[str, str]]]:
     Raises:
         FastqListError: If required columns are missing, rows are malformed, or FastQ paths are invalid or repeated.
     """
-    reader = csv.DictReader(line.lstrip("﻿") if index == 0 else line for index, line in enumerate(lines))
+    reader = csv.DictReader(line.lstrip("\ufeff") if index == 0 else line for index, line in enumerate(lines))
     columns = [c.strip() for c in reader.fieldnames or []]
     reader.fieldnames = columns
 
